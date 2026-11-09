@@ -35,6 +35,8 @@ export default function Footer() {
       <div className="container footer-bottom">
         <span>© {new Date().getFullYear()} Performance Studio</span>
         <span>
+          <Link to="/aszf">ÁSZF</Link>
+          {' · '}
           <a href="https://www.performancestudio.hu/impresszum/" target="_blank" rel="noreferrer">Impresszum</a>
           {' · '}
           <a href="https://www.performancestudio.hu/adatvedelem/" target="_blank" rel="noreferrer">Adatvédelem</a>

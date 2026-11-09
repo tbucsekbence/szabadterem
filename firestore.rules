@@ -26,14 +26,38 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // Felhasználói profil
+    function shortStr(d, k, max) {
+      return !(k in d) || (d[k] is string && d[k].size() <= max);
+    }
+
+    // Felhasználói profil (Google bejelentkezés után kötelezően kitöltendő)
     match /users/{uid} {
       allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
       allow create, update: if signedIn() && request.auth.uid == uid
-        && request.resource.data.keys().hasOnly(['name', 'phone', 'email', 'createdAt', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['name', 'phone', 'email', 'photoURL', 'role', 'school', 'styles',
+             'groupSize', 'frequency', 'note', 'termsVersion', 'termsAcceptedAt', 'createdAt', 'updatedAt'])
         && request.resource.data.name is string && request.resource.data.name.size() <= 100
-        && (!('phone' in request.resource.data) || (request.resource.data.phone is string && request.resource.data.phone.size() <= 30));
+        && shortStr(request.resource.data, 'phone', 30)
+        && shortStr(request.resource.data, 'email', 200)
+        && shortStr(request.resource.data, 'photoURL', 500)
+        && shortStr(request.resource.data, 'role', 20)
+        && shortStr(request.resource.data, 'school', 150)
+        && shortStr(request.resource.data, 'styles', 200)
+        && shortStr(request.resource.data, 'frequency', 20)
+        && shortStr(request.resource.data, 'note', 500)
+        && shortStr(request.resource.data, 'termsVersion', 20)
+        && (!('groupSize' in request.resource.data) || (request.resource.data.groupSize is int && request.resource.data.groupSize >= 1 && request.resource.data.groupSize <= 200));
       allow delete: if false;
+    }
+
+    // Kreditegyenleg és mozgásnapló — csak a szerver (Cloud Functions) írhatja.
+    match /credits/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow write: if false;
+      match /ledger/{entryId} {
+        allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+        allow write: if false;
+      }
     }
 
     // Adminok listája — mindenki csak a saját bejegyzését láthatja (admin-e).

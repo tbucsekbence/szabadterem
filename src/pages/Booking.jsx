@@ -18,6 +18,7 @@ import {
   budapestDate,
   addDays,
   isValidDateStr,
+  creditToApply,
 } from '../../functions/shared/rooms.js';
 import { ft, hh, img, prettyDate } from '../lib/format';
 import Policy from '../components/Policy';
@@ -29,7 +30,9 @@ const STRIP_DAYS = 14;
 export default function Booking() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, profileComplete, credit } = useAuth();
+  const [termsOk, setTermsOk] = useState(false);
+  const [useCredit, setUseCredit] = useState(true);
 
   const today = budapestDate();
   const lastDay = addDays(today, MAX_DAYS_AHEAD);
@@ -114,22 +117,24 @@ export default function Booking() {
   const hours = sel ? sel.end - sel.start : 0;
   const perHour = hourlyPrice(room, people);
   const total = perHour * hours;
+  const creditApplied = user && useCredit && total > 0 ? creditToApply(total, credit) : 0;
+  const toPay = total - creditApplied;
 
   const days = useMemo(() => Array.from({ length: STRIP_DAYS }, (_, i) => addDays(today, i)), [today]);
 
   const pay = async () => {
     if (!sel) return;
-    if (!user) {
-      const next = `/foglalas?terem=${roomId}&datum=${date}`;
-      navigate(`/belepes?next=${encodeURIComponent(next)}`);
-      return;
-    }
+    const back = `/foglalas?terem=${roomId}&datum=${date}`;
+    if (!user) return navigate(`/belepes?next=${encodeURIComponent(back)}`);
+    if (!profileComplete) return navigate(`/profil?next=${encodeURIComponent(back)}`);
+    if (!termsOk) return setError('A foglaláshoz fogadd el az Általános Szerződési Feltételeket.');
     setBusy(true);
     setError('');
     try {
       const fn = httpsCallable(functions, 'createCheckoutSession');
-      const res = await fn({ roomId, date, startHour: sel.start, endHour: sel.end, people });
-      window.location.assign(res.data.url);
+      const res = await fn({ roomId, date, startHour: sel.start, endHour: sel.end, people, termsAccepted: true, useCredit });
+      if (res.data.paidWithCredit) navigate(`/foglalas/sikeres?b=${res.data.bookingId}`);
+      else window.location.assign(res.data.url);
     } catch (err) {
       const msg = err?.code === 'functions/internal' && err.message === 'internal' ? 'A fizetési szolgáltatás jelenleg nem elérhető. Kérjük, próbáld újra később.' : err.message;
       setError(msg || 'Hiba történt a foglalás során.');
@@ -239,21 +244,42 @@ export default function Booking() {
               <div><dt>Létszám</dt><dd>{people} fő</dd></div>
               <div><dt>Óradíj</dt><dd>{ft(perHour)}</dd></div>
             </dl>
+            {user && credit > 0 && (
+              <label className="credit-toggle">
+                <input type="checkbox" checked={useCredit} onChange={(e) => setUseCredit(e.target.checked)} />
+                <span>
+                  Kredit felhasználása <span className="muted small">(egyenleg: {ft(credit)})</span>
+                </span>
+                {creditApplied > 0 && <strong>−{ft(creditApplied)}</strong>}
+              </label>
+            )}
             <div className="summary-total">
-              <span>Összesen</span>
-              <strong>{ft(total)}</strong>
+              <span>{creditApplied > 0 ? 'Fizetendő' : 'Összesen'}</span>
+              <strong>{ft(toPay)}</strong>
             </div>
+            {user && (
+              <label className="checkbox terms-check">
+                <input type="checkbox" checked={termsOk} onChange={(e) => setTermsOk(e.target.checked)} />
+                <span>
+                  Elfogadom az <Link to="/aszf" target="_blank" className="link-accent">ÁSZF</Link>-et, és tudomásul veszem a lemondási feltételeket.
+                </span>
+              </label>
+            )}
             {error && <p className="form-error" role="alert">{error}</p>}
-            <button className="btn btn-primary btn-block btn-lg" disabled={!sel || busy} onClick={pay}>
-              <IconCard /> {busy ? 'Átirányítás…' : user ? 'Tovább a fizetéshez' : 'Belépés és fizetés'}
+            <button className="btn btn-primary btn-block btn-lg" disabled={!sel || busy || (user && profileComplete && !termsOk)} onClick={pay}>
+              <IconCard />{' '}
+              {busy
+                ? 'Feldolgozás…'
+                : !user
+                  ? 'Belépés Google-lel és foglalás'
+                  : !profileComplete
+                    ? 'Profil kitöltése és foglalás'
+                    : sel && toPay === 0
+                      ? 'Foglalás kreditből'
+                      : 'Tovább a fizetéshez'}
             </button>
             <p className="secure-note"><IconShield width={16} height={16} /> Biztonságos fizetés a Stripe rendszerén keresztül.</p>
             <p className="secure-note"><IconClock width={16} height={16} /> A kiválasztott időpontot 30 percig fenntartjuk a fizetéshez.</p>
-            {!user && (
-              <p className="muted small">
-                Még nincs fiókod? <Link to="/regisztracio" className="link-accent">Regisztrálj</Link>
-              </p>
-            )}
           </aside>
         </div>
 

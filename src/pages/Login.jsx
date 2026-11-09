@@ -1,79 +1,43 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
-import { auth } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
-import { authError } from '../lib/format';
 import GoogleButton from '../components/GoogleButton';
+import { IconCheck } from '../components/Icons';
 
-export function safeNext(params) {
+export function safeNext(params, fallback = '/fiokom') {
   const next = params.get('next');
-  return next && next.startsWith('/') && !next.startsWith('//') ? next : '/fiokom';
+  return next && next.startsWith('/') && !next.startsWith('//') ? next : fallback;
 }
 
+// Bejelentkezés kizárólag Google-fiókkal. Első belépéskor a /profil oldalra irányítunk.
 export default function Login() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const { user, loading, profileComplete } = useAuth();
   const [error, setError] = useState('');
-  const [info, setInfo] = useState('');
-  const [busy, setBusy] = useState(false);
   const next = safeNext(params);
 
   useEffect(() => {
-    if (user) navigate(next, { replace: true });
-  }, [user, next, navigate]);
-
-  const submit = async (e) => {
-    e.preventDefault();
-    setBusy(true);
-    setError('');
-    try {
-      await signInWithEmailAndPassword(auth, email.trim(), password);
-    } catch (err) {
-      setError(authError(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const reset = async () => {
-    setError('');
-    setInfo('');
-    if (!email) return setError('Add meg az e-mail címed, és küldünk egy jelszó-visszaállító levelet.');
-    try {
-      await sendPasswordResetEmail(auth, email.trim());
-      setInfo('Elküldtük a jelszó-visszaállító levelet. Nézd meg a postafiókod!');
-    } catch (err) {
-      setError(authError(err));
-    }
-  };
+    if (!user || loading) return;
+    if (profileComplete) navigate(next, { replace: true });
+    else navigate(`/profil?next=${encodeURIComponent(next)}`, { replace: true });
+  }, [user, loading, profileComplete, next, navigate]);
 
   return (
     <div className="page auth-page">
       <div className="auth-card card">
         <h1>Belépés</h1>
-        <p className="muted">Jelentkezz be a foglaláshoz és a foglalásaid kezeléséhez.</p>
+        <p className="muted">A teremfoglaláshoz jelentkezz be Google-fiókoddal. Első belépéskor egy rövid profilt kérünk kitölteni.</p>
+        <ul className="check-list">
+          <li><IconCheck width={18} height={18} /> Nincs külön jelszó</li>
+          <li><IconCheck width={18} height={18} /> Foglalások és kreditek egy helyen</li>
+          <li><IconCheck width={18} height={18} /> Lemondás egy kattintással</li>
+        </ul>
         <GoogleButton onError={setError} />
-        <div className="divider"><span>vagy</span></div>
-        <form onSubmit={submit} className="form">
-          <label>
-            E-mail cím
-            <input type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
-          </label>
-          <label>
-            Jelszó
-            <input type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
-          </label>
-          {error && <p className="form-error" role="alert">{error}</p>}
-          {info && <p className="form-info">{info}</p>}
-          <button className="btn btn-primary btn-block" disabled={busy}>{busy ? 'Belépés…' : 'Belépés'}</button>
-          <button type="button" className="link-btn" onClick={reset}>Elfelejtetted a jelszavad?</button>
-        </form>
+        {error && <p className="form-error" role="alert">{error}</p>}
         <p className="muted small center">
-          Még nincs fiókod? <Link to={`/regisztracio?next=${encodeURIComponent(next)}`} className="link-accent">Regisztráció</Link>
+          A belépéssel elfogadod az <Link to="/aszf" className="link-accent">ÁSZF</Link>-et és az{' '}
+          <a href="https://www.performancestudio.hu/adatvedelem/" target="_blank" rel="noreferrer" className="link-accent">adatkezelési tájékoztatót</a>.
         </p>
       </div>
     </div>

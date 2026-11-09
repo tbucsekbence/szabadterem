@@ -84,13 +84,49 @@ export function calcPrice(room, people, hours) {
 }
 
 /**
- * Lemondási szabály: 48 órával előtte díjmentes (100% vissza),
- * 48 órán belül 50% díj (50% vissza), 24 órán belül teljes díj (0% vissza).
+ * Lemondási szabály — a visszajáró összeg KREDIT formájában kerül jóváírásra:
+ * 48 órán túl 100%, 24–48 óra között 50%, 24 órán belül 0%.
  */
 export function refundRatio(hoursUntilStart) {
   if (hoursUntilStart >= 48) return 1;
   if (hoursUntilStart >= 24) return 0.5;
   return 0;
+}
+
+/** Lemondáskor jóváírandó kredit (Ft). */
+export function cancelCredit(totalAmount, hoursUntilStart) {
+  return Math.round(totalAmount * refundRatio(hoursUntilStart));
+}
+
+// A Stripe legkisebb terhelhető összege forintban; ennél kisebb kártyás maradékot nem indítunk.
+export const STRIPE_MIN_HUF = 175;
+
+/** Mennyi kreditet használjunk fel egy foglaláshoz úgy, hogy a kártyás maradék 0 vagy >= STRIPE_MIN_HUF legyen. */
+export function creditToApply(amount, balance) {
+  const b = Math.max(0, Math.floor(balance || 0));
+  if (b >= amount) return amount;
+  if (amount - b < STRIPE_MIN_HUF) return Math.max(0, amount - STRIPE_MIN_HUF);
+  return b;
+}
+
+// ÁSZF verzió — módosításkor növeld, a foglalásoknál ezt rögzítjük.
+export const TERMS_VERSION = '2026-11-09';
+
+// Kötelező profil (Google bejelentkezés után, foglalás előtt)
+export const PROFILE_ROLES = [
+  { id: 'teacher', label: 'Tánctanár / oktató' },
+  { id: 'trainer', label: 'Edző / mozgásoktató' },
+  { id: 'dancer', label: 'Táncos / próbázó csapat' },
+  { id: 'other', label: 'Egyéb (rendezvény, fotózás, stb.)' },
+];
+export const BOOKING_FREQUENCIES = [
+  { id: 'once', label: 'Alkalmanként' },
+  { id: 'monthly', label: 'Havonta néhányszor' },
+  { id: 'weekly', label: 'Hetente rendszeresen' },
+];
+
+export function isProfileComplete(p) {
+  return Boolean(p && p.name && p.phone && p.role && p.groupSize && p.frequency && p.termsVersion);
 }
 
 function tzOffsetMs(ts) {

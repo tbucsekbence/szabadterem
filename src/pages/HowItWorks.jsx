@@ -5,10 +5,12 @@ import { IconCalendar } from '../components/Icons';
 
 const FAQ = [
   { q: 'Mennyi időre lehet termet bérelni?', a: 'Egész órás sávokban, egyszerre legfeljebb 8 órára. Hosszabb vagy rendszeres bérléshez keress minket, egyedi árat adunk.' },
-  { q: 'Hogyan fizethetek?', a: 'Online, bankkártyával (Visa, Mastercard, Amex), Apple Pay-jel vagy Google Pay-jel a Stripe biztonságos fizetési oldalán. Kártyaadataidat mi nem látjuk és nem tároljuk.' },
+  { q: 'Hogyan lehet belépni?', a: 'Kizárólag Google-fiókkal, külön jelszó nélkül. Első belépéskor egy rövid profilt kérünk kitölteni (név, telefonszám, tanítasz-e és hol, várható létszám).' },
+  { q: 'Hogyan fizethetek?', a: 'Online, bankkártyával (Visa, Mastercard, Amex), Apple Pay-jel vagy Google Pay-jel a Stripe biztonságos fizetési oldalán — vagy a kreditegyenlegedből. Kártyaadataidat mi nem látjuk és nem tároljuk.' },
+  { q: 'Mi az a kredit?', a: 'Ha lemondod a foglalásod, a visszajáró összeget kreditként írjuk jóvá a fiókodban (48 órán túl a teljes összeget, 48 órán belül a felét). A kreditet a következő foglalásnál automatikusan felhasználhatod.' },
   { q: 'Kapok számlát / nyugtát?', a: 'A sikeres fizetésről a Stripe automatikusan e-mailes nyugtát küld. Ha céges számlára van szükséged, írj nekünk a foglalás után.' },
   { q: 'Mi történik, ha nem fejezem be a fizetést?', a: 'A kiválasztott időpontot 30 percig fenntartjuk neked. Ha addig nem fizetsz, az időpont automatikusan újra szabaddá válik.' },
-  { q: 'Hogyan mondhatom le a foglalásom?', a: 'A Fiókom oldalon egy kattintással. A visszatérítés összege a lemondási feltételek szerint automatikusan számolódik, és a kártyádra érkezik.' },
+  { q: 'Hogyan mondhatom le a foglalásom?', a: 'A Fiókom oldalon egy kattintással. A jóváírt kredit összege a lemondási feltételek szerint automatikusan számolódik.' },
   { q: 'Mikor van nyitva a stúdió?', a: 'A termek reggel 7 és este 11 óra között foglalhatók. Ezen kívüli időpontra egyedi egyeztetéssel van lehetőség.' },
 ];
 

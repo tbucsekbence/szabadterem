@@ -34,7 +34,11 @@ export default function BookingResult({ success = false }) {
             <div className={`result-icon ${paid ? 'ok' : 'wait'}`}>{paid ? <IconCheck width={40} height={40} /> : <IconClock width={40} height={40} />}</div>
             <h1>{paid ? 'Sikeres foglalás!' : 'Fizetés feldolgozása…'}</h1>
             <p className="lead muted">
-              {paid ? 'Köszönjük! A foglalásod rögzítettük, a Stripe-tól e-mailben megkapod a nyugtát.' : 'A fizetést megkaptuk, a visszaigazolás néhány másodpercen belül megérkezik.'}
+              {!paid
+                ? 'A fizetést megkaptuk, a visszaigazolás néhány másodpercen belül megérkezik.'
+                : booking?.paymentMethod === 'credit'
+                  ? 'Köszönjük! A foglalásod rögzítettük, a díjat a kreditegyenlegedből vontuk le.'
+                  : 'Köszönjük! A foglalásod rögzítettük, a Stripe-tól e-mailben megkapod a nyugtát.'}
             </p>
           </>
         ) : (

@@ -55,14 +55,9 @@ export default function Header({ overlay }) {
                 </button>
               </>
             ) : (
-              <>
-                <Link to="/belepes" className="btn btn-outline btn-sm">
-                  Belépés
-                </Link>
-                <Link to="/regisztracio" className="btn btn-primary btn-sm">
-                  Regisztráció
-                </Link>
-              </>
+              <Link to="/belepes" className="btn btn-primary btn-sm">
+                <IconUser width={18} height={18} /> Belépés
+              </Link>
             )}
           </div>
         </nav>

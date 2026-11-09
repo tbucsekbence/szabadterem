@@ -325,6 +325,41 @@ input:disabled { opacity: 0.6; }
 .block-group > div { display: grid; }
 .notice.verify { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin: 0 0 24px; border: 1px solid rgba(240, 195, 106, 0.35); }
 
+.nowrap { white-space: nowrap; }
+.stack { display: grid; gap: 24px; min-width: 0; }
+.account-side { display: grid; gap: 24px; align-content: start; }
+
+/* kredit */
+.credit-toggle { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; background: rgba(228, 195, 161, 0.08); border: 1px solid rgba(228, 195, 161, 0.3); border-radius: var(--radius-sm); padding: 10px 14px; cursor: pointer; }
+.credit-toggle input, .terms-check input { width: 18px; height: 18px; accent-color: var(--accent); margin: 0; }
+.credit-toggle strong { color: var(--accent); }
+.terms-check { display: flex; gap: 10px; align-items: flex-start; font-size: 0.88rem; color: var(--muted); }
+.terms-check input { margin-top: 2px; flex-shrink: 0; }
+.credit-balance { font-size: 2.3rem; font-weight: 800; color: var(--accent); margin: 0 0 8px; line-height: 1.1; }
+.ledger { list-style: none; padding: 0; margin: 16px 0 0; display: grid; gap: 10px; border-top: 1px solid var(--border); padding-top: 14px; }
+.ledger li { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.ledger li > span:first-child { display: grid; }
+.ledger .plus { color: var(--success); font-weight: 600; white-space: nowrap; }
+.ledger .minus { color: var(--muted); font-weight: 600; white-space: nowrap; }
+
+/* jogi oldal */
+.legal section { margin-top: 40px; scroll-margin-top: calc(var(--header-h) + 16px); }
+.legal h2 { font-size: 1.45rem; }
+.legal p, .legal li { color: #dcd5cd; }
+.legal ul, .legal ol { padding-left: 22px; display: grid; gap: 6px; }
+.legal a { color: var(--accent); }
+.legal .toc ol { margin: 0; columns: 2; column-gap: 32px; display: block; }
+.legal .toc li { margin-bottom: 6px; }
+.legal-dl { display: grid; grid-template-columns: 200px 1fr; gap: 8px 16px; margin: 0 0 16px; }
+.legal-dl dt { color: var(--muted); }
+.legal-dl dd { margin: 0; }
+mark.todo { background: rgba(240, 195, 106, 0.18); color: var(--warning); padding: 1px 6px; border-radius: 4px; }
+@media (max-width: 600px) {
+  .legal .toc ol { columns: 1; }
+  .legal-dl { grid-template-columns: 1fr; gap: 2px; }
+  .legal-dl dd { margin-bottom: 10px; }
+}
+
 /* ---------- Kapcsolat, GYIK ---------- */
 .contact-layout { display: grid; grid-template-columns: 1fr 1.2fr; gap: 40px; align-items: start; }
 .contact-img { border-radius: var(--radius); aspect-ratio: 16 / 10; object-fit: cover; width: 100%; margin-bottom: 24px; }

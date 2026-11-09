@@ -1,7 +1,7 @@
 import { IconCalendar, IconCard, IconCheck, IconUser } from './Icons';
 
 const STEPS = [
-  { icon: IconUser, title: 'Regisztrálj', text: 'Hozz létre fiókot e-mail címmel vagy Google-fiókkal — egy perc az egész.' },
+  { icon: IconUser, title: 'Lépj be Google-lel', text: 'Első alkalommal egy rövid profilt kérünk: tanítasz-e, hol, és hány fővel tervezel.' },
   { icon: IconCalendar, title: 'Válassz termet és időpontot', text: 'Nézd meg élőben a szabad órákat, és jelöld ki a neked megfelelő sávot.' },
   { icon: IconCard, title: 'Fizess online', text: 'Bankkártyával, Apple Pay-jel vagy Google Pay-jel, a Stripe biztonságos felületén.' },
   { icon: IconCheck, title: 'Gyere és táncolj', text: 'A visszaigazolást e-mailben kapod, a foglalásaidat a fiókodban követheted.' },

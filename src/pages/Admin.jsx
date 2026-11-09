@@ -21,11 +21,16 @@ function DayBoard({ date }) {
   const active = items.filter((b) => ['paid', 'pending', 'blocked'].includes(b.status));
   const cell = (roomId, h) => active.find((b) => b.roomId === roomId && h >= b.startHour && h < b.endHour);
 
-  const cancel = async (b) => {
-    const what = b.type === 'block' ? 'a blokkolást' : `${b.name || b.email} foglalását (teljes visszatérítéssel)`;
-    if (!window.confirm(`Biztosan törlöd ${what}?`)) return;
+  const cancel = async (b, mode) => {
+    const what =
+      b.type === 'block'
+        ? 'Biztosan visszaadod ezt az időpontot a foglalásba?'
+        : mode === 'refund'
+          ? `Lemondod ${b.name || b.email} foglalását? A kártyás rész (${ft(b.paidAmount ?? b.cardAmount ?? 0)}) visszautalásra kerül, a kreditrész kreditként jár vissza.`
+          : `Lemondod ${b.name || b.email} foglalását? A teljes összeget (${ft(b.amount || 0)}) kreditként jóváírjuk neki.`;
+    if (!window.confirm(what)) return;
     try {
-      await httpsCallable(functions, 'cancelBooking')({ bookingId: b.id });
+      await httpsCallable(functions, 'cancelBooking')({ bookingId: b.id, mode });
     } catch (err) {
       setMsg(err.message);
     }
@@ -67,12 +72,28 @@ function DayBoard({ date }) {
                 <tr key={b.id}>
                   <td>{b.roomName}</td>
                   <td>{hh(b.startHour)}–{hh(b.endHour)}</td>
-                  <td>{b.type === 'block' ? <em>{b.note || 'Blokkolás'}</em> : b.name || '—'}</td>
+                  <td>
+                    {b.type === 'block' ? <em>{b.note || 'Blokkolás'}</em> : b.name || '—'}
+                    {b.school && <><br /><span className="small muted">{b.school}</span></>}
+                  </td>
                   <td className="small">{b.email}<br />{b.phone}</td>
                   <td>{b.people ?? '—'}</td>
-                  <td>{b.amount != null ? ft(b.amount) : '—'}{b.refundAmount ? <><br /><span className="small muted">vissza: {ft(b.refundAmount)}</span></> : null}</td>
+                  <td>
+                    {b.amount != null ? ft(b.amount) : '—'}
+                    {b.creditUsed > 0 && <><br /><span className="small muted">kreditből: {ft(b.creditUsed)}</span></>}
+                    {b.creditIssued > 0 && <><br /><span className="small muted">kredit vissza: {ft(b.creditIssued)}</span></>}
+                    {b.refundAmount > 0 && <><br /><span className="small muted">kártyára vissza: {ft(b.refundAmount)}</span></>}
+                  </td>
                   <td><span className={`badge badge-${b.status}`}>{STATUS_LABEL[b.status]}</span></td>
-                  <td>{['paid', 'blocked'].includes(b.status) && <button className="btn btn-ghost btn-sm" onClick={() => cancel(b)}>Törlés</button>}</td>
+                  <td className="nowrap">
+                    {b.status === 'blocked' && <button className="btn btn-ghost btn-sm" onClick={() => cancel(b)}>Visszaadás</button>}
+                    {b.status === 'paid' && (
+                      <>
+                        <button className="btn btn-ghost btn-sm" onClick={() => cancel(b, 'credit')}>Lemondás (kredit)</button>
+                        {(b.paidAmount ?? b.cardAmount) > 0 && <button className="btn btn-ghost btn-sm" onClick={() => cancel(b, 'refund')}>Lemondás (visszautalás)</button>}
+                      </>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -253,6 +274,38 @@ function BlockGroups() {
   );
 }
 
+function CreditAdjust() {
+  const [f, setF] = useState({ email: '', amount: '', note: '' });
+  const [msg, setMsg] = useState('');
+  const [error, setError] = useState('');
+  const submit = async (e) => {
+    e.preventDefault();
+    setMsg('');
+    setError('');
+    try {
+      const res = await httpsCallable(functions, 'adjustCredit')({ email: f.email, amount: Number.parseInt(f.amount, 10), note: f.note });
+      setMsg(`${res.data.name} új egyenlege: ${ft(res.data.balance)}`);
+      setF({ email: '', amount: '', note: '' });
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+  return (
+    <form className="card form" onSubmit={submit}>
+      <h2 className="card-title">Kredit kézi jóváírása</h2>
+      <p className="muted small">Pl. kompenzáció vagy készpénzes befizetés. Levonáshoz adj meg negatív összeget.</p>
+      <label>Felhasználó e-mail címe<input type="email" required value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></label>
+      <div className="form-row">
+        <label>Összeg (Ft)<input type="number" required step={1} value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} /></label>
+        <label>Megjegyzés<input maxLength={200} value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} /></label>
+      </div>
+      <button className="btn btn-outline">Jóváírás</button>
+      {msg && <p className="form-info">{msg}</p>}
+      {error && <p className="form-error">{error}</p>}
+    </form>
+  );
+}
+
 function Messages() {
   const [msgs, setMsgs] = useState([]);
   useEffect(() => {
@@ -293,7 +346,6 @@ export default function Admin() {
       <div className="page"><div className="container narrow">
         <h1>Nincs jogosultság</h1>
         <p className="muted">Ez az oldal csak adminisztrátoroknak érhető el.</p>
-        {!user.emailVerified && <p className="muted">Ha szuperadmin vagy, előbb erősítsd meg az e-mail címedet (a Fiókom oldalon).</p>}
       </div></div>
     );
   }
@@ -316,8 +368,11 @@ export default function Admin() {
           <BlockForm date={date} />
         </div>
         <div className="admin-layout">
-          <BlockGroups />
-          <Messages />
+          <div className="stack">
+            <BlockGroups />
+            <Messages />
+          </div>
+          <CreditAdjust />
         </div>
       </div>
     </div>

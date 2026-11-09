@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import Home from './pages/Home';
 import Rooms from './pages/Rooms';
@@ -8,9 +8,10 @@ import BookingResult from './pages/BookingResult';
 import HowItWorks from './pages/HowItWorks';
 import Contact from './pages/Contact';
 import Login from './pages/Login';
-import Register from './pages/Register';
+import Profile from './pages/Profile';
 import Account from './pages/Account';
 import Admin from './pages/Admin';
+import Terms from './pages/Terms';
 import NotFound from './pages/NotFound';
 
 export default function App() {
@@ -25,8 +26,10 @@ export default function App() {
         <Route path="foglalas/megszakitva" element={<BookingResult />} />
         <Route path="hogyan-mukodik" element={<HowItWorks />} />
         <Route path="kapcsolat" element={<Contact />} />
+        <Route path="aszf" element={<Terms />} />
         <Route path="belepes" element={<Login />} />
-        <Route path="regisztracio" element={<Register />} />
+        <Route path="regisztracio" element={<Navigate to="/belepes" replace />} />
+        <Route path="profil" element={<Profile />} />
         <Route path="fiokom" element={<Account />} />
         <Route path="admin" element={<Admin />} />
         <Route path="*" element={<NotFound />} />

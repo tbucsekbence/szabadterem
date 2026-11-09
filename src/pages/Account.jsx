@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
-import { collection, doc, getDoc, onSnapshot, orderBy, query, setDoc, serverTimestamp, where } from 'firebase/firestore';
+import { collection, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { sendEmailVerification } from 'firebase/auth';
-import { auth, db, functions } from '../lib/firebase';
+import { db, functions } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
-import { refundRatio, zonedTime } from '../../functions/shared/rooms.js';
+import { BOOKING_FREQUENCIES, PROFILE_ROLES, cancelCredit, zonedTime } from '../../functions/shared/rooms.js';
 import { STATUS_LABEL, ft, hh, prettyDate } from '../lib/format';
 import { IconCalendar } from '../components/Icons';
 
@@ -15,20 +14,21 @@ function BookingItem({ b }) {
   const start = zonedTime(b.date, b.startHour).getTime();
   const upcoming = start > Date.now();
   const canCancel = upcoming && b.status === 'paid';
-  const hoursLeft = (start - Date.now()) / 3600000;
-  const refund = Math.round(((b.paidAmount ?? b.amount) * refundRatio(hoursLeft)) / 100) * 100;
+  const credit = cancelCredit(b.amount || 0, (start - Date.now()) / 3600000);
 
   const cancel = async () => {
     const text =
-      refund > 0
-        ? `Biztosan lemondod a foglalást? ${ft(refund)} visszatérítést kapsz a kártyádra.`
-        : 'Biztosan lemondod a foglalást? A kezdésig kevesebb mint 24 óra van hátra, ezért visszatérítés nem jár.';
+      credit >= (b.amount || 0)
+        ? `Biztosan lemondod a foglalást? A teljes összeget (${ft(credit)}) kreditként jóváírjuk.`
+        : credit > 0
+          ? `Biztosan lemondod? 48 órán belül vagy, ezért a díj 50%-át (${ft(credit)}) írjuk jóvá kreditként.`
+          : 'Biztosan lemondod? A kezdésig kevesebb mint 24 óra van hátra, ezért kredit-jóváírás nem jár.';
     if (!window.confirm(text)) return;
     setBusy(true);
     setMsg('');
     try {
       const res = await httpsCallable(functions, 'cancelBooking')({ bookingId: b.id });
-      setMsg(res.data.refundAmount ? `Lemondva, ${ft(res.data.refundAmount)} visszatérítés elindítva.` : 'Lemondva.');
+      setMsg(res.data.creditIssued ? `Lemondva, ${ft(res.data.creditIssued)} kredit jóváírva.` : 'Lemondva.');
     } catch (err) {
       setMsg(err.message || 'Nem sikerült lemondani.');
     } finally {
@@ -47,7 +47,9 @@ function BookingItem({ b }) {
         <span className="muted">
           {prettyDate(b.date, { weekday: 'long' })} · {hh(b.startHour)} – {hh(b.endHour)} · {b.people} fő
         </span>
-        {b.refundAmount > 0 && <span className="muted small">Visszatérítve: {ft(b.refundAmount)}</span>}
+        {b.creditUsed > 0 && <span className="muted small">Ebből kreditből: {ft(b.creditUsed)}</span>}
+        {b.creditIssued > 0 && <span className="muted small">Jóváírt kredit: {ft(b.creditIssued)}</span>}
+        {b.refundAmount > 0 && <span className="muted small">Kártyára visszautalva: {ft(b.refundAmount)}</span>}
         {msg && <span className="small">{msg}</span>}
       </div>
       <div className="bi-side">
@@ -63,70 +65,60 @@ function BookingItem({ b }) {
   );
 }
 
-function Profile({ user }) {
-  const [form, setForm] = useState({ name: '', phone: '' });
-  const [saved, setSaved] = useState('');
+const LEDGER_LABEL = { cancel: 'Lemondás', use: 'Felhasználás', restore: 'Visszaírás', admin: 'Jóváírás' };
+
+function CreditCard({ uid, balance }) {
+  const [ledger, setLedger] = useState([]);
   useEffect(() => {
-    getDoc(doc(db, 'users', user.uid)).then((s) => {
-      const d = s.data() || {};
-      setForm({ name: d.name || user.displayName || '', phone: d.phone || '' });
-    });
-  }, [user]);
-
-  const save = async (e) => {
-    e.preventDefault();
-    try {
-      await setDoc(doc(db, 'users', user.uid), { name: form.name.trim(), phone: form.phone.trim(), email: user.email || '', updatedAt: serverTimestamp() }, { merge: true });
-      setSaved('Mentve.');
-    } catch {
-      setSaved('Nem sikerült menteni.');
-    }
-  };
-
+    const q = query(collection(db, 'credits', uid, 'ledger'), orderBy('createdAt', 'desc'), limit(20));
+    return onSnapshot(q, (s) => setLedger(s.docs.map((d) => ({ id: d.id, ...d.data() }))), () => {});
+  }, [uid]);
   return (
-    <form className="card form" onSubmit={save}>
-      <h2 className="card-title">Adataim</h2>
-      <label>Név<input required maxLength={100} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
-      <label>E-mail<input value={user.email || ''} disabled /></label>
-      <label>Telefonszám<input type="tel" maxLength={30} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></label>
-      <button className="btn btn-outline">Mentés</button>
-      {saved && <p className="form-info">{saved}</p>}
-    </form>
+    <section className="card credit-card">
+      <h2 className="card-title">Kreditegyenleg</h2>
+      <p className="credit-balance">{ft(balance)}</p>
+      <p className="muted small">A lemondott foglalások után járó összeget kreditként írjuk jóvá, amit a következő foglalásnál automatikusan felhasználhatsz.</p>
+      {ledger.length > 0 && (
+        <ul className="ledger">
+          {ledger.map((l) => (
+            <li key={l.id}>
+              <span>
+                <strong>{LEDGER_LABEL[l.type] || l.type}</strong>
+                <span className="muted small">{l.note}</span>
+              </span>
+              <span className={l.amount > 0 ? 'plus' : 'minus'}>{l.amount > 0 ? '+' : '−'}{ft(Math.abs(l.amount))}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
-function VerifyBanner({ user }) {
-  const [msg, setMsg] = useState('');
-  if (user.emailVerified) return null;
-  const resend = async () => {
-    try {
-      await sendEmailVerification(user);
-      setMsg('Elküldtük a megerősítő levelet.');
-    } catch {
-      setMsg('Nem sikerült elküldeni, próbáld újra pár perc múlva.');
-    }
-  };
-  const recheck = async () => {
-    await user.reload();
-    if (auth.currentUser?.emailVerified) {
-      await auth.currentUser.getIdToken(true);
-      window.location.reload();
-    } else setMsg('Még nem látjuk a megerősítést — kattints a levélben kapott linkre.');
-  };
+function ProfileSummary({ profile, email }) {
+  const role = PROFILE_ROLES.find((r) => r.id === profile?.role)?.label;
+  const freq = BOOKING_FREQUENCIES.find((r) => r.id === profile?.frequency)?.label;
   return (
-    <div className="notice verify">
-      <span>Erősítsd meg az e-mail címedet ({user.email}) a levélben kapott linkkel.</span>
-      <span className="row-actions m0">
-        <button className="btn btn-outline btn-sm" onClick={resend}>Levél újraküldése</button>
-        <button className="btn btn-ghost btn-sm" onClick={recheck}>Megerősítettem</button>
-      </span>
-      {msg && <span className="small">{msg}</span>}
-    </div>
+    <section className="card">
+      <div className="card-head">
+        <h2 className="card-title">Profilom</h2>
+        <Link to="/profil" className="btn btn-outline btn-sm">Szerkesztés</Link>
+      </div>
+      <dl className="summary-list">
+        <div><dt>Név</dt><dd>{profile?.name}</dd></div>
+        <div><dt>E-mail</dt><dd>{email}</dd></div>
+        <div><dt>Telefon</dt><dd>{profile?.phone}</dd></div>
+        <div><dt>Szerep</dt><dd>{role}</dd></div>
+        {profile?.school && <div><dt>Iskola</dt><dd>{profile.school}</dd></div>}
+        <div><dt>Létszám</dt><dd>{profile?.groupSize} fő</dd></div>
+        <div><dt>Gyakoriság</dt><dd>{freq}</dd></div>
+      </dl>
+    </section>
   );
 }
 
 export default function Account() {
-  const { user, loading } = useAuth();
+  const { user, loading, profile, profileComplete, credit } = useAuth();
   const [bookings, setBookings] = useState(null);
   const [error, setError] = useState('');
 
@@ -145,20 +137,21 @@ export default function Account() {
 
   if (loading) return <div className="page"><div className="container"><p className="muted">Betöltés…</p></div></div>;
   if (!user) return <Navigate to="/belepes?next=%2Ffiokom" replace />;
+  if (!profileComplete) return <Navigate to="/profil?next=%2Ffiokom" replace />;
 
   const now = Date.now();
   const list = bookings || [];
   const upcoming = list.filter((b) => zonedTime(b.date, b.startHour).getTime() > now && ['paid', 'pending'].includes(b.status)).reverse();
   const past = list.filter((b) => !upcoming.includes(b));
+  const first = (profile?.name || user.displayName || '').split(' ').slice(-1)[0];
 
   return (
     <div className="page">
       <div className="container">
         <header className="page-head">
           <p className="eyebrow">Fiókom</p>
-          <h1>Szia{user.displayName ? `, ${user.displayName.split(' ')[0]}` : ''}!</h1>
+          <h1>Szia{first ? `, ${first}` : ''}!</h1>
         </header>
-        <VerifyBanner user={user} />
         <div className="account-layout">
           <div>
             <section className="card">
@@ -182,7 +175,10 @@ export default function Account() {
               </section>
             )}
           </div>
-          <Profile user={user} />
+          <div className="account-side">
+            <CreditCard uid={user.uid} balance={credit} />
+            <ProfileSummary profile={profile} email={user.email} />
+          </div>
         </div>
       </div>
     </div>

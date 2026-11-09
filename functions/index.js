@@ -24,6 +24,10 @@ import {
   HOLD_MINUTES,
   isSuperadminEmail,
   weekdayIndex,
+  cancelCredit,
+  creditToApply,
+  isProfileComplete,
+  TERMS_VERSION,
 } from './shared/rooms.js';
 
 setGlobalOptions({ region: 'europe-central2', maxInstances: 10 });
@@ -97,13 +101,36 @@ async function releaseHours(tx, booking, bookingId) {
   };
 }
 
+// ---------- kredit ----------
+// credits/{uid}            { balance }            — csak a szerver írja
+// credits/{uid}/ledger/{id} { amount, type, ... } — mozgások naplója
+
+const creditRef = (uid) => db.doc(`credits/${uid}`);
+
+async function readCredit(tx, uid) {
+  const s = await tx.get(creditRef(uid));
+  return s.exists ? Number(s.data().balance) || 0 : 0;
+}
+
+/** Tranzakción belül (az összes olvasás UTÁN) módosítja az egyenleget és naplóz. */
+function writeCredit(tx, uid, balanceBefore, delta, entry) {
+  const balance = balanceBefore + delta;
+  tx.set(creditRef(uid), { balance, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+  tx.set(creditRef(uid).collection('ledger').doc(), { ...entry, amount: delta, balanceAfter: balance, createdAt: FieldValue.serverTimestamp() });
+  return balance;
+}
+
 async function expireBooking(bookingId, reason) {
   const ref = db.doc(`bookings/${bookingId}`);
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     if (!snap.exists || snap.data().status !== 'pending') return;
-    const release = await releaseHours(tx, snap.data(), bookingId);
+    const b = snap.data();
+    const release = await releaseHours(tx, b, bookingId);
+    const creditUsed = b.creditUsed || 0;
+    const balance = creditUsed > 0 ? await readCredit(tx, b.uid) : 0;
     release();
+    if (creditUsed > 0) writeCredit(tx, b.uid, balance, creditUsed, { type: 'restore', bookingId, note: 'Félbeszakadt fizetés — kredit visszaírva' });
     tx.update(ref, { status: 'expired', expiredReason: reason, updatedAt: FieldValue.serverTimestamp() });
   });
 }
@@ -121,25 +148,44 @@ export const createCheckoutSession = onCall({ secrets: [STRIPE_SECRET_KEY] }, as
     throw new HttpsError('invalid-argument', `A létszám 1 és ${room.maxPeople} fő között lehet.`);
   }
 
+  if (req.data?.termsAccepted !== true) {
+    throw new HttpsError('failed-precondition', 'A foglaláshoz el kell fogadnod az Általános Szerződési Feltételeket.');
+  }
+  const useCredit = req.data?.useCredit === true;
+
   const hours = endHour - startHour;
   const amount = calcPrice(room, people, hours);
   const userSnap = await db.doc(`users/${uid}`).get();
   const profile = userSnap.exists ? userSnap.data() : {};
+  if (!isProfileComplete(profile)) {
+    throw new HttpsError('failed-precondition', 'A foglalás előtt töltsd ki a profilodat.');
+  }
   const email = req.auth.token.email || profile.email || null;
 
   const bookingRef = db.collection('bookings').doc();
   const bookingId = bookingRef.id;
   const expiresAt = Timestamp.fromMillis(Date.now() + (HOLD_MINUTES + 2) * 60 * 1000);
 
+  let creditUsed = 0;
+  let cardAmount = amount;
   await db.runTransaction(async (tx) => {
+    // olvasások
     const commit = await claimHours(tx, { roomId, date, startHour, endHour }, bookingId);
+    const balance = useCredit ? await readCredit(tx, uid) : 0;
+    creditUsed = useCredit ? creditToApply(amount, balance) : 0;
+    cardAmount = amount - creditUsed;
+    const fullyCredit = cardAmount === 0;
+    // írások
     commit();
+    if (creditUsed > 0) writeCredit(tx, uid, balance, -creditUsed, { type: 'use', bookingId, note: `${room.name}, ${date} ${startHour}:00–${endHour}:00` });
     tx.set(bookingRef, {
       type: 'booking',
       uid,
       email,
       name: profile.name || req.auth.token.name || null,
       phone: profile.phone || null,
+      role: profile.role || null,
+      school: profile.school || null,
       roomId,
       roomName: room.name,
       date,
@@ -147,15 +193,21 @@ export const createCheckoutSession = onCall({ secrets: [STRIPE_SECRET_KEY] }, as
       endHour,
       hours,
       people,
-      amount,
+      amount, // teljes ár
+      creditUsed, // ebből kreditből
+      cardAmount, // ebből kártyával
       currency: 'HUF',
-      status: 'pending',
+      status: fullyCredit ? 'paid' : 'pending',
+      paymentMethod: fullyCredit ? 'credit' : creditUsed > 0 ? 'credit+card' : 'card',
+      termsVersion: TERMS_VERSION,
       startsAt: Timestamp.fromDate(zonedTime(date, startHour)),
-      expiresAt,
+      ...(fullyCredit ? { paidAt: FieldValue.serverTimestamp(), paidAmount: 0 } : { expiresAt }),
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
   });
+
+  if (cardAmount === 0) return { bookingId, paidWithCredit: true };
 
   const site = SITE_URL.value().replace(/\/$/, '');
   try {
@@ -171,10 +223,10 @@ export const createCheckoutSession = onCall({ secrets: [STRIPE_SECRET_KEY] }, as
             price_data: {
               currency: 'huf',
               // A Stripe a HUF-ot két tizedesjeggyel kezeli: 1 Ft = 100 egység
-              unit_amount: amount * 100,
+              unit_amount: cardAmount * 100,
               product_data: {
                 name: `${room.name} – ${date} ${startHour}:00–${endHour}:00`,
-                description: `${hours} óra, ${people} fő — Performance Studio terembérlés`,
+                description: `${hours} óra, ${people} fő — Performance Studio terembérlés${creditUsed ? ` (${creditUsed} Ft kredit levonva)` : ''}`,
               },
             },
           },
@@ -261,9 +313,15 @@ async function markPaid(bookingId, session) {
         const commit = await claimHours(tx, b, bookingId);
         commit();
       } catch {
+        // Időközben más foglalta le: a kártyás részt visszautaljuk. (A kredit a lejáratkor már visszakerült.)
         conflict = true;
         tx.update(ref, { status: 'refunded', refundReason: 'slot-taken-after-expiry', paymentIntentId: session.payment_intent, updatedAt: FieldValue.serverTimestamp() });
         return;
+      }
+      // Lejáratkor a felhasznált kredit visszakerült — most újra levonjuk.
+      if (b.creditUsed > 0) {
+        const balance = await readCredit(tx, b.uid);
+        writeCredit(tx, b.uid, balance, -b.creditUsed, { type: 'use', bookingId, note: 'Késve beérkezett fizetés' });
       }
     }
     tx.update(ref, {
@@ -296,31 +354,77 @@ export const cancelBooking = onCall({ secrets: [STRIPE_SECRET_KEY] }, async (req
   const startsAt = zonedTime(b.date, b.startHour).getTime();
   if (startsAt <= Date.now() && !admin) throw new HttpsError('failed-precondition', 'Elmúlt időpontot nem lehet lemondani.');
 
+  // Felhasználói lemondás: a lemondási szabály szerinti összeg KREDITként jár vissza.
+  // Admin lemondás (a stúdió mondja le): a teljes összeg jár vissza —
+  //   mode 'credit' (alapértelmezés): teljes összeg kreditként,
+  //   mode 'refund': a kártyás rész visszautalás a kártyára, a kreditrész kreditként.
+  const byAdmin = admin && b.uid !== uid;
+  const mode = byAdmin && req.data?.mode === 'refund' ? 'refund' : 'credit';
+  let creditIssued = 0;
   let refundAmount = 0;
   if (b.status === 'paid') {
-    const ratio = admin ? 1 : refundRatio((startsAt - Date.now()) / 3600000);
-    refundAmount = Math.round(((b.paidAmount ?? b.amount) * ratio) / 100) * 100; // kerek 100 Ft
-    if (refundAmount > 0 && b.paymentIntentId) {
-      await stripeClient().refunds.create(
-        { payment_intent: b.paymentIntentId, amount: refundAmount * 100, metadata: { bookingId } },
-        { idempotencyKey: `cancel-refund-${bookingId}` },
-      );
+    const total = b.amount || 0;
+    if (!byAdmin) {
+      creditIssued = cancelCredit(total, (startsAt - Date.now()) / 3600000);
+    } else if (mode === 'credit') {
+      creditIssued = total;
+    } else {
+      refundAmount = b.paidAmount ?? b.cardAmount ?? 0;
+      creditIssued = b.creditUsed || 0;
+      if (refundAmount > 0 && b.paymentIntentId) {
+        await stripeClient().refunds.create(
+          { payment_intent: b.paymentIntentId, amount: refundAmount * 100, metadata: { bookingId } },
+          { idempotencyKey: `cancel-refund-${bookingId}` },
+        );
+      }
     }
   }
 
   await db.runTransaction(async (tx) => {
     const fresh = await tx.get(ref);
+    if (!['paid', 'blocked'].includes(fresh.data().status)) throw new HttpsError('failed-precondition', 'Ez a foglalás már nem aktív.');
     const release = await releaseHours(tx, fresh.data(), bookingId);
+    const balance = creditIssued > 0 ? await readCredit(tx, b.uid) : 0;
     release();
+    if (creditIssued > 0) {
+      writeCredit(tx, b.uid, balance, creditIssued, {
+        type: 'cancel',
+        bookingId,
+        note: `Lemondás: ${b.roomName}, ${b.date} ${b.startHour}:00–${b.endHour}:00${byAdmin ? ' (a stúdió mondta le)' : ''}`,
+      });
+    }
     tx.update(ref, {
       status: 'cancelled',
+      creditIssued,
       refundAmount,
-      cancelledBy: admin && b.uid !== uid ? 'admin' : 'user',
+      cancelledBy: byAdmin ? 'admin' : 'user',
       cancelledAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
   });
-  return { status: 'cancelled', refundAmount };
+  return { status: 'cancelled', creditIssued, refundAmount };
+});
+
+// ---------- 4/b) Admin: kredit kézi jóváírása / levonása ----------
+
+export const adjustCredit = onCall(async (req) => {
+  if (!(await isAdmin(req.auth))) throw new HttpsError('permission-denied', 'Csak adminisztrátor.');
+  const email = String(req.data?.email || '').trim().toLowerCase();
+  const amount = Number(req.data?.amount);
+  const note = String(req.data?.note || '').slice(0, 200);
+  if (!email || !Number.isInteger(amount) || amount === 0 || Math.abs(amount) > 1000000) {
+    throw new HttpsError('invalid-argument', 'Adj meg e-mail címet és egy nem nulla, egész összeget.');
+  }
+  const users = await db.collection('users').where('email', '==', email).limit(2).get();
+  if (users.empty) throw new HttpsError('not-found', 'Nincs regisztrált felhasználó ezzel az e-mail címmel.');
+  const targetUid = users.docs[0].id;
+  let balance = 0;
+  await db.runTransaction(async (tx) => {
+    const before = await readCredit(tx, targetUid);
+    if (before + amount < 0) throw new HttpsError('failed-precondition', `Az egyenleg nem mehet mínuszba (jelenleg ${before} Ft).`);
+    balance = writeCredit(tx, targetUid, before, amount, { type: 'admin', note: note || 'Kézi jóváírás', by: req.auth.uid });
+  });
+  return { balance, name: users.docs[0].data().name || email };
 });
 
 // ---------- 5) Admin: időpont blokkolása (saját órák, karbantartás) ----------
