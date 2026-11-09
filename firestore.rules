@@ -1,0 +1,51 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isAdmin() {
+      return signedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // Foglaltsági térkép (csak azt mutatja, mely órák foglaltak) — bárki olvashatja,
+    // írni csak a Cloud Functions tud.
+    match /occupancy/{id} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Foglalások: a tulajdonos és az admin olvashatja, írni csak a szerver tud.
+    match /bookings/{bookingId} {
+      allow read: if signedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow write: if false;
+    }
+
+    // Felhasználói profil
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['name', 'phone', 'email', 'createdAt', 'updatedAt'])
+        && request.resource.data.name is string && request.resource.data.name.size() <= 100
+        && (!('phone' in request.resource.data) || (request.resource.data.phone is string && request.resource.data.phone.size() <= 30));
+      allow delete: if false;
+    }
+
+    // Adminok listája — mindenki csak a saját bejegyzését láthatja (admin-e).
+    // Admint a Firebase konzolban lehet felvenni: admins/{uid} dokumentum.
+    match /admins/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // Kapcsolati űrlap
+    match /contactMessages/{id} {
+      allow create: if request.resource.data.keys().hasOnly(['name', 'email', 'phone', 'message', 'createdAt'])
+        && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 100
+        && request.resource.data.email is string && request.resource.data.email.size() <= 200
+        && request.resource.data.message is string && request.resource.data.message.size() > 0 && request.resource.data.message.size() <= 3000
+        && request.resource.data.createdAt == request.time;
+      allow read, delete: if isAdmin();
+      allow update: if false;
+    }
+  }
+}

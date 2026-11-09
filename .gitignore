@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env
+.env.*
+*.log
+.firebase/
+functions/.runtimeconfig.json
+functions/.secret.local
