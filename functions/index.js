@@ -22,6 +22,8 @@ import {
   MAX_DAYS_AHEAD,
   MAX_HOURS_PER_BOOKING,
   HOLD_MINUTES,
+  isSuperadminEmail,
+  weekdayIndex,
 } from './shared/rooms.js';
 
 setGlobalOptions({ region: 'europe-central2', maxInstances: 10 });
@@ -39,9 +41,11 @@ const stripeClient = () => new Stripe(STRIPE_SECRET_KEY.value());
 
 const occRef = (roomId, date) => db.doc(`occupancy/${roomId}_${date}`);
 
-async function isAdmin(uid) {
-  if (!uid) return false;
-  const snap = await db.doc(`admins/${uid}`).get();
+/** Szuperadmin (igazolt e-mail alapján) vagy admins/{uid} dokumentummal rendelkező felhasználó. */
+async function isAdmin(auth) {
+  if (!auth?.uid) return false;
+  if (isSuperadminEmail(auth.token?.email, auth.token?.email_verified)) return true;
+  const snap = await db.doc(`admins/${auth.uid}`).get();
   return snap.exists;
 }
 
@@ -281,7 +285,7 @@ export const cancelBooking = onCall({ secrets: [STRIPE_SECRET_KEY] }, async (req
   const uid = req.auth?.uid;
   const bookingId = req.data?.bookingId;
   if (!uid || typeof bookingId !== 'string') throw new HttpsError('invalid-argument', 'Hiányzó adat.');
-  const admin = await isAdmin(uid);
+  const admin = await isAdmin(req.auth);
   const ref = db.doc(`bookings/${bookingId}`);
   const snap = await ref.get();
   if (!snap.exists) throw new HttpsError('not-found', 'Nincs ilyen foglalás.');
@@ -321,33 +325,94 @@ export const cancelBooking = onCall({ secrets: [STRIPE_SECRET_KEY] }, async (req
 
 // ---------- 5) Admin: időpont blokkolása (saját órák, karbantartás) ----------
 
+// Egy hívással több terem, dátumtartomány és opcionálisan a hét kiválasztott napjai
+// blokkolhatók (pl. "minden kedden 18–20 a Nagyteremben, decemberig").
+// A már foglalt / elmúlt időpontokat kihagyja, és visszaadja, mi maradt ki.
+const MAX_BLOCK_ITEMS = 400;
+
 export const createBlock = onCall(async (req) => {
-  const uid = req.auth?.uid;
-  if (!(await isAdmin(uid))) throw new HttpsError('permission-denied', 'Csak adminisztrátor.');
-  const { roomId, date, startHour, endHour } = req.data || {};
+  if (!(await isAdmin(req.auth))) throw new HttpsError('permission-denied', 'Csak adminisztrátor.');
+  const uid = req.auth.uid;
+  const { dateFrom, dateTo, startHour, endHour } = req.data || {};
+  const roomIds = Array.isArray(req.data?.roomIds) ? [...new Set(req.data.roomIds)] : [];
+  const weekdays = Array.isArray(req.data?.weekdays) ? req.data.weekdays.map(Number).filter((n) => n >= 0 && n <= 6) : [];
   const note = String(req.data?.note || '').slice(0, 200);
-  const room = validateSlot({ roomId, date, startHour, endHour });
-  const ref = db.collection('bookings').doc();
-  await db.runTransaction(async (tx) => {
-    const commit = await claimHours(tx, { roomId, date, startHour, endHour }, ref.id);
-    commit();
-    tx.set(ref, {
-      type: 'block',
-      uid,
-      roomId,
-      roomName: room.name,
-      date,
-      startHour,
-      endHour,
-      hours: endHour - startHour,
-      note,
-      status: 'blocked',
-      startsAt: Timestamp.fromDate(zonedTime(date, startHour)),
-      createdAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
+
+  if (!roomIds.length || roomIds.some((id) => !getRoom(id))) throw new HttpsError('invalid-argument', 'Válassz legalább egy termet.');
+  if (!isValidDateStr(dateFrom) || !isValidDateStr(dateTo) || dateTo < dateFrom) throw new HttpsError('invalid-argument', 'Érvénytelen dátumtartomány.');
+  if (dateTo > addDays(dateFrom, 366)) throw new HttpsError('invalid-argument', 'Legfeljebb egy évre lehet egyszerre blokkolni.');
+  if (!Number.isInteger(startHour) || !Number.isInteger(endHour) || startHour < OPEN_HOUR || endHour > CLOSE_HOUR || endHour <= startHour) {
+    throw new HttpsError('invalid-argument', 'Érvénytelen idősáv.');
+  }
+
+  const dates = [];
+  for (let d = dateFrom; d <= dateTo; d = addDays(d, 1)) {
+    if (!weekdays.length || weekdays.includes(weekdayIndex(d))) dates.push(d);
+  }
+  const total = dates.length * roomIds.length;
+  if (!total) throw new HttpsError('invalid-argument', 'A megadott feltételekre nem esik egyetlen nap sem.');
+  if (total > MAX_BLOCK_ITEMS) throw new HttpsError('invalid-argument', `Egyszerre legfeljebb ${MAX_BLOCK_ITEMS} blokkolás hozható létre (most ${total} lenne).`);
+
+  const groupId = db.collection('bookings').doc().id;
+  let created = 0;
+  const skipped = [];
+  for (const date of dates) {
+    if (zonedTime(date, startHour).getTime() <= Date.now()) {
+      roomIds.forEach((roomId) => skipped.push({ roomId, date, reason: 'elmúlt' }));
+      continue;
+    }
+    for (const roomId of roomIds) {
+      const room = getRoom(roomId);
+      const ref = db.collection('bookings').doc();
+      try {
+        await db.runTransaction(async (tx) => {
+          const commit = await claimHours(tx, { roomId, date, startHour, endHour }, ref.id);
+          commit();
+          tx.set(ref, {
+            type: 'block',
+            groupId,
+            uid,
+            roomId,
+            roomName: room.name,
+            date,
+            startHour,
+            endHour,
+            hours: endHour - startHour,
+            note,
+            status: 'blocked',
+            startsAt: Timestamp.fromDate(zonedTime(date, startHour)),
+            createdAt: FieldValue.serverTimestamp(),
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+        });
+        created++;
+      } catch (err) {
+        if (err instanceof HttpsError && err.code === 'already-exists') skipped.push({ roomId, date, reason: 'foglalt' });
+        else throw err;
+      }
+    }
+  }
+  return { groupId, created, skipped };
+});
+
+// Egy blokkolás-sorozat összes jövőbeli elemének törlése.
+export const cancelBlockGroup = onCall(async (req) => {
+  if (!(await isAdmin(req.auth))) throw new HttpsError('permission-denied', 'Csak adminisztrátor.');
+  const groupId = req.data?.groupId;
+  if (typeof groupId !== 'string' || !groupId) throw new HttpsError('invalid-argument', 'Hiányzó azonosító.');
+  const snap = await db.collection('bookings').where('groupId', '==', groupId).where('status', '==', 'blocked').get();
+  let cancelled = 0;
+  for (const doc of snap.docs) {
+    await db.runTransaction(async (tx) => {
+      const fresh = await tx.get(doc.ref);
+      if (fresh.data().status !== 'blocked') return;
+      const release = await releaseHours(tx, fresh.data(), doc.id);
+      release();
+      tx.update(doc.ref, { status: 'cancelled', cancelledBy: 'admin', cancelledAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
     });
-  });
-  return { bookingId: ref.id };
+    cancelled++;
+  }
+  return { cancelled };
 });
 
 // ---------- 6) Lejárt, ki nem fizetett tartások takarítása ----------

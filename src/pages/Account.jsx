@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { collection, doc, getDoc, onSnapshot, orderBy, query, setDoc, serverTimestamp, where } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { db, functions } from '../lib/firebase';
+import { sendEmailVerification } from 'firebase/auth';
+import { auth, db, functions } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import { refundRatio, zonedTime } from '../../functions/shared/rooms.js';
 import { STATUS_LABEL, ft, hh, prettyDate } from '../lib/format';
@@ -94,6 +95,36 @@ function Profile({ user }) {
   );
 }
 
+function VerifyBanner({ user }) {
+  const [msg, setMsg] = useState('');
+  if (user.emailVerified) return null;
+  const resend = async () => {
+    try {
+      await sendEmailVerification(user);
+      setMsg('Elküldtük a megerősítő levelet.');
+    } catch {
+      setMsg('Nem sikerült elküldeni, próbáld újra pár perc múlva.');
+    }
+  };
+  const recheck = async () => {
+    await user.reload();
+    if (auth.currentUser?.emailVerified) {
+      await auth.currentUser.getIdToken(true);
+      window.location.reload();
+    } else setMsg('Még nem látjuk a megerősítést — kattints a levélben kapott linkre.');
+  };
+  return (
+    <div className="notice verify">
+      <span>Erősítsd meg az e-mail címedet ({user.email}) a levélben kapott linkkel.</span>
+      <span className="row-actions m0">
+        <button className="btn btn-outline btn-sm" onClick={resend}>Levél újraküldése</button>
+        <button className="btn btn-ghost btn-sm" onClick={recheck}>Megerősítettem</button>
+      </span>
+      {msg && <span className="small">{msg}</span>}
+    </div>
+  );
+}
+
 export default function Account() {
   const { user, loading } = useAuth();
   const [bookings, setBookings] = useState(null);
@@ -127,6 +158,7 @@ export default function Account() {
           <p className="eyebrow">Fiókom</p>
           <h1>Szia{user.displayName ? `, ${user.displayName.split(' ')[0]}` : ''}!</h1>
         </header>
+        <VerifyBanner user={user} />
         <div className="account-layout">
           <div>
             <section className="card">

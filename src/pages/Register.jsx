@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { createUserWithEmailAndPassword, sendEmailVerification, updateProfile } from 'firebase/auth';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
@@ -31,6 +31,7 @@ export default function Register() {
     try {
       const cred = await createUserWithEmailAndPassword(auth, form.email.trim(), form.password);
       await updateProfile(cred.user, { displayName: form.name.trim() });
+      sendEmailVerification(cred.user).catch(() => {});
       await setDoc(doc(db, 'users', cred.user.uid), {
         name: form.name.trim(),
         email: form.email.trim(),

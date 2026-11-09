@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
+import { isSuperadminEmail } from '../../functions/shared/rooms.js';
 
 const AuthContext = createContext(null);
 
@@ -15,7 +16,9 @@ export function AuthProvider({ children }) {
       onAuthStateChanged(auth, async (u) => {
         setUser(u);
         setIsAdmin(false);
-        if (u) {
+        if (u && isSuperadminEmail(u.email, u.emailVerified)) {
+          setIsAdmin(true);
+        } else if (u) {
           try {
             const snap = await getDoc(doc(db, 'admins', u.uid));
             setIsAdmin(snap.exists());

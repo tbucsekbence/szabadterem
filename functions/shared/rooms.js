@@ -10,6 +10,22 @@ export const MAX_DAYS_AHEAD = 90; // ennyi napra előre lehet foglalni
 export const MAX_HOURS_PER_BOOKING = 8;
 export const HOLD_MINUTES = 30; // fizetésig ennyi ideig van fenntartva az időpont (Stripe minimum)
 
+// Szuperadminok: ezek az (igazolt) e-mail címek mindig admin jogot kapnak.
+// FIGYELEM: módosításkor a firestore.rules isSuperadmin() listáját is frissíteni kell!
+export const SUPERADMIN_EMAILS = ['bucsek93@gmail.com'];
+
+export function isSuperadminEmail(email, emailVerified) {
+  return Boolean(emailVerified && email && SUPERADMIN_EMAILS.includes(String(email).toLowerCase()));
+}
+
+export const WEEKDAYS = ['H', 'K', 'Sze', 'Cs', 'P', 'Szo', 'V']; // index: 0 = hétfő
+
+/** 0 = hétfő ... 6 = vasárnap */
+export function weekdayIndex(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7;
+}
+
 export const ROOMS = [
   {
     id: 'nagyterem',
