@@ -217,6 +217,10 @@ export const createCheckoutSession = onCall({ secrets: [STRIPE_SECRET_KEY] }, as
         locale: 'hu',
         customer_email: email || undefined,
         client_reference_id: uid,
+        // Számlázáshoz: teljes számlázási cím kötelező, cégeknek cégnév + adószám (opcionális)
+        billing_address_collection: 'required',
+        tax_id_collection: { enabled: true },
+        customer_creation: 'always',
         line_items: [
           {
             quantity: 1,
@@ -299,6 +303,29 @@ export const stripeWebhook = onRequest({ secrets: [STRIPE_SECRET_KEY, STRIPE_WEB
   }
 });
 
+/** A Stripe Checkoutban megadott számlázási adatok (számla kiállításához). */
+function billingFromSession(session) {
+  const cd = session.customer_details || {};
+  const a = cd.address || {};
+  return {
+    name: cd.name || null,
+    businessName: cd.business_name || null,
+    email: cd.email || null,
+    phone: cd.phone || null,
+    taxIds: (cd.tax_ids || []).map((t) => t.value).filter(Boolean),
+    taxExempt: cd.tax_exempt || null,
+    address: {
+      line1: a.line1 || null,
+      line2: a.line2 || null,
+      postalCode: a.postal_code || null,
+      city: a.city || null,
+      state: a.state || null,
+      country: a.country || null,
+    },
+    stripeCustomerId: typeof session.customer === 'string' ? session.customer : session.customer?.id || null,
+  };
+}
+
 async function markPaid(bookingId, session) {
   const ref = db.doc(`bookings/${bookingId}`);
   let conflict = false;
@@ -326,6 +353,7 @@ async function markPaid(bookingId, session) {
     }
     tx.update(ref, {
       status: 'paid',
+      billing: billingFromSession(session),
       paymentIntentId: session.payment_intent,
       paidAmount: Math.round((session.amount_total || 0) / 100),
       paidAt: FieldValue.serverTimestamp(),

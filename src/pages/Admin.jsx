@@ -76,7 +76,20 @@ function DayBoard({ date }) {
                     {b.type === 'block' ? <em>{b.note || 'Blokkolás'}</em> : b.name || '—'}
                     {b.school && <><br /><span className="small muted">{b.school}</span></>}
                   </td>
-                  <td className="small">{b.email}<br />{b.phone}</td>
+                  <td className="small">
+                    {b.email}<br />{b.phone}
+                    {b.billing && (
+                      <details className="billing">
+                        <summary>Számlázási adatok</summary>
+                        {b.billing.businessName && <>{b.billing.businessName}<br /></>}
+                        {b.billing.name}<br />
+                        {b.billing.address?.postalCode} {b.billing.address?.city}, {b.billing.address?.line1}
+                        {b.billing.address?.line2 && ` ${b.billing.address.line2}`}
+                        {b.billing.address?.country && b.billing.address.country !== 'HU' && ` (${b.billing.address.country})`}
+                        {b.billing.taxIds?.length > 0 && <><br />Adószám: {b.billing.taxIds.join(', ')}</>}
+                      </details>
+                    )}
+                  </td>
                   <td>{b.people ?? '—'}</td>
                   <td>
                     {b.amount != null ? ft(b.amount) : '—'}

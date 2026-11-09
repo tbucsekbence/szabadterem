@@ -326,6 +326,8 @@ input:disabled { opacity: 0.6; }
 .notice.verify { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin: 0 0 24px; border: 1px solid rgba(240, 195, 106, 0.35); }
 
 .nowrap { white-space: nowrap; }
+details.billing { margin-top: 6px; }
+details.billing summary { cursor: pointer; color: var(--accent); }
 .stack { display: grid; gap: 24px; min-width: 0; }
 .account-side { display: grid; gap: 24px; align-content: start; }
 

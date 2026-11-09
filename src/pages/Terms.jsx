@@ -101,7 +101,7 @@ export default function Terms() {
 
         <section id="fizetes">
           <h2>7. Fizetés</h2>
-          <p>A díj fizetése online, bankkártyával (illetve Apple Pay / Google Pay szolgáltatással) a Stripe biztonságos fizetési oldalán történik. A kártyaadatok kizárólag a Stripe-hoz kerülnek, azokat a Szolgáltató nem látja és nem tárolja. A sikeres fizetésről a Stripe e-mailes nyugtát küld. <T>számlázás módja, pl. „Számlát a Szolgáltató elektronikusan állít ki a fizetést követően.”</T></p>
+          <p>A díj fizetése online, bankkártyával (illetve Apple Pay / Google Pay szolgáltatással) a Stripe biztonságos fizetési oldalán történik. A kártyaadatok kizárólag a Stripe-hoz kerülnek, azokat a Szolgáltató nem látja és nem tárolja. A fizetési oldalon a Bérlő megadja a számla kiállításához szükséges adatait (név, számlázási cím; cég esetén cégnév és adószám), amelyekért ő felel. A sikeres fizetésről a Stripe e-mailes nyugtát küld. <T>számlázás módja, pl. „Számlát a Szolgáltató elektronikusan állít ki a fizetést követően.”</T></p>
           <p>A díj részben vagy egészben kreditből is kiegyenlíthető. Ha a kredittel nem fedezett maradék a kártyás fizetés minimumánál (175 Ft) kevesebb lenne, a rendszer annyival kevesebb kreditet használ fel, hogy a kártyával fizetendő rész legalább 175 Ft legyen; a fel nem használt kredit az egyenlegen marad.</p>
         </section>
 
