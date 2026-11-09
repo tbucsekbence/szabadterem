@@ -31,7 +31,7 @@ const db = getFirestore();
 const STRIPE_SECRET_KEY = defineSecret('STRIPE_SECRET_KEY');
 const STRIPE_WEBHOOK_SECRET = defineSecret('STRIPE_WEBHOOK_SECRET');
 // A weboldal publikus címe (sikeres / megszakított fizetés utáni visszairányításhoz)
-const SITE_URL = defineString('SITE_URL', { default: 'https://tbucsekbence.github.io/szabadterem' });
+const SITE_URL = defineString('SITE_URL', { default: 'https://szabadterem.hu' });
 
 const stripeClient = () => new Stripe(STRIPE_SECRET_KEY.value());
 

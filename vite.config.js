@@ -1,9 +1,9 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// GitHub Pages alatt az oldal a /<repo-név>/ útvonalon fut.
-// Saját domainnél (pl. foglalas.performancestudio.hu) állítsd VITE_BASE=/ értékre.
+// Az oldal saját domainen fut (szabadterem.hu), ezért a gyökérből szolgáljuk ki.
+// Ha egyszer a <user>.github.io/<repo>/ címen kellene futnia: VITE_BASE=/szabadterem/
 export default defineConfig({
-  base: process.env.VITE_BASE || '/szabadterem/',
+  base: process.env.VITE_BASE || '/',
   plugins: [react()],
 });

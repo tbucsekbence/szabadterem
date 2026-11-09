@@ -1,4 +1,4 @@
-# Performance Studio – online terembérlés
+﻿# Performance Studio – online terembérlés
 
 React (Vite) weboldal a Performance Studio tánctermeinek online foglalásához.
 
@@ -10,7 +10,7 @@ React (Vite) weboldal a Performance Studio tánctermeinek online foglalásához.
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173/szabadterem/
+npm run dev        # http://localhost:5173/
 npm run build      # dist/ + dist/404.html (SPA fallback)
 ```
 
@@ -45,7 +45,7 @@ npm run build      # dist/ + dist/404.html (SPA fallback)
 ### 1. Firebase
 
 1. Firebase konzol → **Authentication** → Sign-in method: kapcsold be az **Email/Password** és a **Google** szolgáltatót.
-   Authentication → Settings → Authorized domains: add hozzá a `tbucsekbence.github.io` domaint (és a saját domaint, ha lesz).
+   Authentication → Settings → Authorized domains: add hozzá a `szabadterem.hu` és `www.szabadterem.hu` domaint.
 2. **Firestore Database** létrehozása (javasolt hely: `europe-central2`, Varsó).
 3. A Cloud Functionshöz **Blaze (pay-as-you-go)** csomag szükséges (kis forgalomnál gyakorlatilag ingyenes).
 4. Telepítés:
@@ -57,7 +57,7 @@ npm run build      # dist/ + dist/404.html (SPA fallback)
    firebase functions:secrets:set STRIPE_WEBHOOK_SECRET   # whsec_... (lásd lent)
    firebase deploy --only firestore,functions
    ```
-   Telepítéskor a `SITE_URL` paramétert is bekéri (alapértelmezés: `https://tbucsekbence.github.io/szabadterem`).
+   Telepítéskor a `SITE_URL` paramétert is bekéri (alapértelmezés: `https://szabadterem.hu`).
 5. Admin felvétele: Firestore → `admins` gyűjtemény → új dokumentum, az azonosítója a felhasználó UID-ja (Authentication listából), tartalma pl. `{ role: "admin" }`.
 
 ### 2. Stripe
@@ -74,7 +74,7 @@ npm run build      # dist/ + dist/404.html (SPA fallback)
 A `main` ágra pusholva a `.github/workflows/deploy.yml` automatikusan buildel és kitelepít.
 Repository → Settings → Pages → Source: **GitHub Actions**.
 
-Saját domainnél (pl. `foglalas.performancestudio.hu`) a buildet `VITE_BASE=/` környezeti változóval kell futtatni, és a `SITE_URL` paramétert is át kell állítani.
+Az oldal a **szabadterem.hu** domainen fut (`public/CNAME`). DNS: 4 db A rekord a GitHub Pages IP-ire (185.199.108-111.153), `www` CNAME → `tbucsekbence.github.io`. Settings → Pages → Enforce HTTPS bekapcsolandó, amint elérhető.
 
 ## Árak módosítása
 
