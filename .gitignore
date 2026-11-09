@@ -6,3 +6,6 @@ dist/
 .firebase/
 functions/.runtimeconfig.json
 functions/.secret.local
+
+# A functions/.env csak nem titkos paramétereket tartalmaz (pl. SITE_URL), ezért verziókövetett
+!functions/.env
